@@ -78,7 +78,7 @@ async def handle_cv_file(message: Message, state: FSMContext, bot: Bot) -> None:
         except Exception:
             logger.exception("CV faylini Google Drive'ga yuklashda xatolik")
 
-        row = build_row(data, "accepted", cv_link=cv_link)
+        row = build_row(data, "accepted", cv_link=cv_link, cv_file_id=file_id)
         await sheets.append_row_with_fallback(row)
 
         await _notify_admins(bot, data, cv_link, message)

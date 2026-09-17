@@ -93,6 +93,33 @@ python bot.py
 
 ## 6. Docker orqali serverda ishga tushirish (production)
 
+### 6.1 — Bitta buyruq bilan (tavsiya etiladi)
+
+Yangi (boshqa) serverda loyihani klonlab, bitta buyruq bilan o'rnatish va ishga tushirish:
+
+```bash
+git clone https://github.com/DiorDevv/BotV.git
+cd BotV
+./setup.sh
+```
+
+`setup.sh` avtomatik ravishda:
+1. Docker va Docker Compose plaginini tekshiradi, yo'q bo'lsa o'rnatadi (Ubuntu/Debian, sudo
+   so'raydi)
+2. `.env` faylini `.env.example` asosida yaratadi (agar mavjud bo'lmasa) — shu holatda skript
+   to'xtaydi va sizdan `.env`ni to'ldirib qayta ishga tushirishni so'raydi
+3. `credentials.json` yo'q bo'lsa, bo'sh joy egallovchi fayl yaratadi (bot baribir ishga
+   tushadi, faqat Google Sheets/Drive real kalit qo'yilmaguncha ishlamaydi)
+4. `logs/`, `tmp/`, `fallback_log.jsonl` uchun joy tayyorlaydi
+5. `docker compose up -d --build` bilan konteynerni quradi va ishga tushiradi
+
+`.env` to'ldirilgach, `./setup.sh`ni qayta ishga tushirsangiz bo'ldi — bot ishlab ketadi.
+
+Qulaylik uchun `Makefile` ham bor: `make up` (= `./setup.sh`), `make logs`, `make restart`,
+`make down`, `make update` (`git pull` + qayta qurish).
+
+### 6.2 — Qo'lda
+
 ```bash
 cp .env.example .env
 # .env faylini to'ldiring

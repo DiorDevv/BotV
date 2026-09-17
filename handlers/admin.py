@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, FSInputFile, Message
@@ -12,7 +12,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from openpyxl import Workbook
 
 from config import config
-from services import sheets
+from services import fallback, sheets
 from texts import TEXTS
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,29 @@ CANDIDATE_FIELDS = [
 # tufayli), shuning uchun haqiqiy yozuvlar shu yerda keshlanadi.
 _cv_cache: dict[int, list[dict]] = {}
 
+FALLBACK_SOURCE_NOTE = (
+    "\n\nℹ️ Google Sheets hali ulanmagan — ma'lumotlar mahalliy fayldan (fallback_log.jsonl) "
+    "olindi."
+)
+
+
+def _is_google_configured() -> bool:
+    return bool(config.GOOGLE_SHEET_ID)
+
+
+async def _get_all_records() -> tuple[list[dict], bool]:
+    """Barcha nomzodlar yozuvini qaytaradi: (records, used_fallback).
+
+    Google Sheets sozlangan bo'lsa undan, aks holda yoki xato bo'lsa mahalliy
+    fallback_log.jsonl faylidan o'qiydi - shunda admin panel Google'siz ham ishlaydi.
+    """
+    if _is_google_configured():
+        try:
+            return await sheets.get_all_records(), False
+        except Exception:
+            logger.exception("Google Sheets'dan o'qishda xatolik, fallback fayldan o'qilmoqda")
+    return await fallback.read_all(), True
+
 
 def is_admin(user_id: int | None) -> bool:
     return user_id is not None and user_id in config.ADMIN_CHAT_IDS
@@ -60,7 +83,7 @@ def _admin_menu_keyboard():
 
 
 async def _build_stats_text() -> str:
-    records = await sheets.get_all_records()
+    records, used_fallback = await _get_all_records()
     total = len(records)
     accepted = sum(1 for r in records if r.get("Holat") == "✅ Mos")
     rejected = total - accepted
@@ -82,7 +105,10 @@ async def _build_stats_text() -> str:
         lines.append("Rad etilgan bosqichlar bo'yicha taqsimot:")
         for stage, count in stage_counter.most_common():
             lines.append(f"  • {stage}: {count}")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    if used_fallback:
+        text += FALLBACK_SOURCE_NOTE
+    return text
 
 
 def _build_xlsx(records: list[dict]) -> Path:
@@ -112,32 +138,51 @@ def _candidate_detail_text(record: dict) -> str:
     lines = ["✅ Nomzod ma'lumotlari", ""]
     for field in CANDIDATE_FIELDS:
         lines.append(f"{field}: {record.get(field, '')}")
-    cv_link = record.get("CV Drive havolasi", "")
     lines.append("")
-    if cv_link:
-        lines.append(f"CV (Google Drive): {cv_link}")
+    if record.get("_cv_file_id"):
+        lines.append("📎 CV fayli mavjud — pastdagi tugma orqali oling.")
     else:
-        lines.append(
-            "CV havolasi mavjud emas (Google Drive sozlanmagan yoki fayl "
-            "ariza vaqtida yuklanmagan)."
-        )
+        cv_link = record.get("CV Drive havolasi", "")
+        if cv_link:
+            lines.append(f"CV (Google Drive): {cv_link}")
+        else:
+            lines.append(
+                "CV fayli topilmadi (juda eski yozuv yoki ariza vaqtida qabul "
+                "qilinmagan)."
+            )
     return "\n".join(lines)
 
 
+def _candidate_detail_keyboard(idx: int, has_file: bool):
+    builder = InlineKeyboardBuilder()
+    if has_file:
+        builder.button(text="📎 CV faylini olish", callback_data=f"admin:cvfile:{idx}")
+    builder.button(text="⬅️ Ro'yxatga qaytish", callback_data="admin:cvs")
+    builder.button(text="🏠 Bosh menyu", callback_data="admin:menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 async def _cv_list_keyboard() -> tuple[str, object | None, list[dict]]:
-    records = await sheets.get_all_records()
+    records, used_fallback = await _get_all_records()
     accepted = [r for r in records if r.get("Holat") == "✅ Mos"]
     accepted = list(reversed(accepted))[:CV_LIST_LIMIT]
 
     if not accepted:
-        return "Hozircha mos nomzodlar topilmadi.", None, []
+        text = "Hozircha mos nomzodlar topilmadi."
+        if used_fallback:
+            text += FALLBACK_SOURCE_NOTE
+        return text, None, []
 
     builder = InlineKeyboardBuilder()
     for idx, record in enumerate(accepted):
         builder.button(text=_candidate_label(record), callback_data=f"admin:cv:{idx}")
     builder.button(text="⬅️ Bosh menyu", callback_data="admin:menu")
     builder.adjust(1)
-    return f"So'nggi {len(accepted)} ta mos nomzod:", builder.as_markup(), accepted
+    text = f"So'nggi {len(accepted)} ta mos nomzod:"
+    if used_fallback:
+        text += FALLBACK_SOURCE_NOTE
+    return text, builder.as_markup(), accepted
 
 
 # ---- /start (faqat adminlar uchun tugmali menyu) ----------------------------
@@ -187,9 +232,9 @@ async def cb_stats(callback: CallbackQuery) -> None:
 @router.message(Command("export"), _is_admin_message)
 async def cmd_export(message: Message) -> None:
     try:
-        records = await sheets.get_all_records()
+        records, used_fallback = await _get_all_records()
     except Exception:
-        logger.exception("/export uchun Sheets'dan ma'lumot olishda xatolik")
+        logger.exception("/export uchun ma'lumot olishda xatolik")
         await message.answer(TEXTS["uz"]["error_generic"])
         return
 
@@ -198,10 +243,11 @@ async def cmd_export(message: Message) -> None:
         return
 
     path = _build_xlsx(records)
+    caption = "Eksport tayyor." + (FALLBACK_SOURCE_NOTE if used_fallback else "")
     try:
         await message.answer_document(
             FSInputFile(path, filename="hr_bot_export.xlsx"),
-            caption="Eksport tayyor.",
+            caption=caption,
             reply_markup=_admin_menu_keyboard(),
         )
     except Exception:
@@ -215,7 +261,7 @@ async def cmd_export(message: Message) -> None:
 async def cb_export(callback: CallbackQuery) -> None:
     await callback.answer()
     try:
-        records = await sheets.get_all_records()
+        records, used_fallback = await _get_all_records()
     except Exception:
         logger.exception("/export (tugma) uchun ma'lumot olishda xatolik")
         await callback.message.answer(TEXTS["uz"]["error_generic"])
@@ -226,10 +272,11 @@ async def cb_export(callback: CallbackQuery) -> None:
         return
 
     path = _build_xlsx(records)
+    caption = "Eksport tayyor." + (FALLBACK_SOURCE_NOTE if used_fallback else "")
     try:
         await callback.message.answer_document(
             FSInputFile(path, filename="hr_bot_export.xlsx"),
-            caption="Eksport tayyor.",
+            caption=caption,
             reply_markup=_admin_menu_keyboard(),
         )
     except Exception:
@@ -273,4 +320,37 @@ async def cb_cv_detail(callback: CallbackQuery) -> None:
         )
         return
 
-    await callback.message.answer(_candidate_detail_text(records[idx]), reply_markup=_admin_menu_keyboard())
+    record = records[idx]
+    await callback.message.answer(
+        _candidate_detail_text(record),
+        reply_markup=_candidate_detail_keyboard(idx, has_file=bool(record.get("_cv_file_id"))),
+    )
+
+
+@router.callback_query(_is_admin_callback, lambda c: c.data.startswith("admin:cvfile:"))
+async def cb_cv_file(callback: CallbackQuery, bot: Bot) -> None:
+    await callback.answer()
+    admin_id = callback.from_user.id
+    try:
+        idx = int(callback.data.split(":", 2)[2])
+    except (ValueError, IndexError):
+        return
+
+    records = _cv_cache.get(admin_id)
+    if not records or idx >= len(records):
+        await callback.message.answer(
+            "Ro'yxat eskirgan, iltimos qaytadan \"📁 So'nggi CV'lar\" tugmasini bosing.",
+            reply_markup=_admin_menu_keyboard(),
+        )
+        return
+
+    file_id = records[idx].get("_cv_file_id")
+    if not file_id:
+        await callback.message.answer("Bu nomzod uchun CV fayli saqlanmagan.")
+        return
+
+    try:
+        await bot.send_document(admin_id, file_id)
+    except Exception:
+        logger.exception("CV faylini qayta yuborishda xatolik")
+        await callback.message.answer(TEXTS["uz"]["error_generic"])

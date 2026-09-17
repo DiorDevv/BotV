@@ -22,3 +22,26 @@ async def append_fallback(row: dict) -> None:
         await asyncio.to_thread(_append_sync, row)
     except Exception:
         logger.exception("Fallback faylga ham yozib bo'lmadi - ma'lumot yo'qolishi mumkin: %r", row)
+
+
+def _read_all_sync() -> list[dict]:
+    if not config.FALLBACK_LOG_PATH.exists():
+        return []
+    records = []
+    with config.FALLBACK_LOG_PATH.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            entry.pop("_fallback_saved_at", None)
+            records.append(entry)
+    return records
+
+
+async def read_all() -> list[dict]:
+    """fallback_log.jsonl faylidagi barcha yozuvlarni o'qiydi (Google Sheets o'rniga)."""
+    return await asyncio.to_thread(_read_all_sync)
