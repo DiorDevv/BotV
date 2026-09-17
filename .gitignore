@@ -1,0 +1,12 @@
+.env
+credentials.json
+*.log
+logs/
+tmp/
+fallback_log.jsonl
+__pycache__/
+*.pyc
+.venv/
+venv/
+.venv_check/
+.claude/
