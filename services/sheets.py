@@ -1,12 +1,11 @@
 """Google Sheets bilan ishlash: nomzodlar arxivi."""
-import asyncio
 import logging
 
 import gspread
 from google.oauth2.service_account import Credentials
 
 from config import config
-from services import fallback
+from services import fallback, retry
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +67,18 @@ def _get_all_records_sync() -> list[dict]:
 
 
 async def append_row_with_fallback(row: dict) -> None:
-    """Sheets'ga yozishga urinadi; xato bo'lsa mahalliy faylga fallback qiladi."""
+    """
+    Sheets'ga yozishga urinadi (vaqtinchalik xatoliklarda 3 martagacha qayta
+    urinib, masalan ko'p foydalanuvchi bir vaqtda yozganda Google kvota
+    xatoliklarini yengish uchun); baribir muvaffaqiyatsiz bo'lsa mahalliy
+    faylga fallback qiladi.
+    """
     try:
-        await asyncio.to_thread(_append_row_sync, row)
+        await retry.retry_sync_call(_append_row_sync, row)
     except Exception:
         logger.exception("Google Sheets'ga yozishda xatolik, fallback faylga yozilmoqda")
         await fallback.append_fallback(row)
 
 
 async def get_all_records() -> list[dict]:
-    return await asyncio.to_thread(_get_all_records_sync)
+    return await retry.retry_sync_call(_get_all_records_sync)

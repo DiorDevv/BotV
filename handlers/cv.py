@@ -1,4 +1,5 @@
 """3.6-3.7 bosqichlar: CV so'rash, qabul qilish va bildirishnomalar."""
+import asyncio
 import logging
 from datetime import datetime
 
@@ -17,6 +18,11 @@ from texts import TEXTS
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+# Bir vaqtda Drive/Sheets/Email'ga yuboriladigan CV'lar sonini cheklaydi - ko'p
+# nomzod (masalan 1000 kishi) bir zumda ariza topshirsa ham Google/SMTP
+# kvotasi va resurslarga "to'lqin" bo'lib tushmasligi uchun.
+CV_PROCESSING_SEMAPHORE = asyncio.Semaphore(20)
 
 
 async def ask_for_cv(message: Message, lang: str) -> None:
@@ -72,21 +78,22 @@ async def handle_cv_file(message: Message, state: FSMContext, bot: Bot) -> None:
         return
 
     try:
-        cv_link = ""
-        try:
-            cv_link = await drive.upload_file(local_path, safe_name)
-        except Exception:
-            logger.exception("CV faylini Google Drive'ga yuklashda xatolik")
+        async with CV_PROCESSING_SEMAPHORE:
+            cv_link = ""
+            try:
+                cv_link = await drive.upload_file(local_path, safe_name)
+            except Exception:
+                logger.exception("CV faylini Google Drive'ga yuklashda xatolik")
 
-        row = build_row(data, "accepted", cv_link=cv_link, cv_file_id=file_id)
-        await sheets.append_row_with_fallback(row)
+            row = build_row(data, "accepted", cv_link=cv_link, cv_file_id=file_id)
+            await sheets.append_row_with_fallback(row)
 
-        await _notify_admins(bot, data, cv_link, message)
+            await _notify_admins(bot, data, cv_link, message)
 
-        admin_text = build_admin_notification_text(data, cv_link)
-        await email_service.send_notification_email(
-            admin_text, cv_link, attachment_path=local_path, attachment_filename=original_name
-        )
+            admin_text = build_admin_notification_text(data, cv_link)
+            await email_service.send_notification_email(
+                admin_text, cv_link, attachment_path=local_path, attachment_filename=original_name
+            )
     finally:
         local_path.unlink(missing_ok=True)
 

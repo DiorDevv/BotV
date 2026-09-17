@@ -1,5 +1,4 @@
 """Google Drive bilan ishlash: CV fayllarni yuklash."""
-import asyncio
 import logging
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 from config import config
+from services import retry
 
 logger = logging.getLogger(__name__)
 
@@ -48,5 +48,8 @@ def _upload_sync(local_path: Path, filename: str) -> str:
 
 
 async def upload_file(local_path: Path, filename: str) -> str:
-    """CV faylni Drive papkasiga yuklaydi va ko'rish havolasini qaytaradi."""
-    return await asyncio.to_thread(_upload_sync, local_path, filename)
+    """
+    CV faylni Drive papkasiga yuklaydi va ko'rish havolasini qaytaradi.
+    Vaqtinchalik xatoliklarda (tarmoq, kvota) avtomatik qayta uriniladi.
+    """
+    return await retry.retry_sync_call(_upload_sync, local_path, filename)
