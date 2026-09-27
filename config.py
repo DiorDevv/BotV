@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
+import json
 import os
 
 load_dotenv()
@@ -47,6 +48,23 @@ class Config:
     LOG_DIR: Path = Path(os.getenv("LOG_DIR", "./logs"))
     TMP_DIR: Path = Path(os.getenv("TMP_DIR", "./tmp"))
 
+    @property
+    def has_google_credentials(self) -> bool:
+        """credentials.json haqiqiy Service Account kalitimi (setup.sh qo'yadigan '{}' emas)."""
+        try:
+            with open(self.GOOGLE_SERVICE_ACCOUNT_JSON_PATH, encoding="utf-8") as f:
+                return bool(json.load(f).get("client_email"))
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    @property
+    def sheets_enabled(self) -> bool:
+        return bool(self.GOOGLE_SHEET_ID) and self.has_google_credentials
+
+    @property
+    def drive_enabled(self) -> bool:
+        return bool(self.GOOGLE_DRIVE_FOLDER_ID) and self.has_google_credentials
+
     def validate(self) -> None:
         if not self.BOT_TOKEN:
             raise RuntimeError("BOT_TOKEN .env faylida ko'rsatilmagan.")
@@ -57,6 +75,12 @@ class Config:
             )
         if not self.GOOGLE_SHEET_ID:
             logger.warning("GOOGLE_SHEET_ID ko'rsatilmagan - Sheets integratsiyasi ishlamaydi.")
+        elif not self.has_google_credentials:
+            logger.warning(
+                "%s haqiqiy Service Account kaliti emas - Google Sheets/Drive o'chirilgan, "
+                "ma'lumotlar fallback faylga yoziladi.",
+                self.GOOGLE_SERVICE_ACCOUNT_JSON_PATH,
+            )
 
 
 config = Config()

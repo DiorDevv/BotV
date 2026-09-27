@@ -73,6 +73,9 @@ async def append_row_with_fallback(row: dict) -> None:
     xatoliklarini yengish uchun); baribir muvaffaqiyatsiz bo'lsa mahalliy
     faylga fallback qiladi.
     """
+    if not config.sheets_enabled:
+        await fallback.append_fallback(row)
+        return
     try:
         await retry.retry_sync_call(_append_row_sync, row)
     except Exception:

@@ -54,8 +54,24 @@ if [ ! -f credentials.json ]; then
 fi
 
 # 4. Kerakli fayl/papkalar ----------------------------------------------------
-touch fallback_log.jsonl
-mkdir -p logs tmp
+mkdir -p logs data
+# Eski versiyadagi fallback_log.jsonl bo'lsa, yangi joyiga ko'chiramiz
+if [ -f fallback_log.jsonl ] && [ ! -s data/fallback_log.jsonl ]; then
+    mv fallback_log.jsonl data/fallback_log.jsonl
+    info "fallback_log.jsonl data/ papkasiga ko'chirildi."
+fi
+
+# Konteyner ichida bot UID 1000 foydalanuvchisi sifatida ishlaydi - u logs/, data/
+# ga yoza olishi va credentials.json'ni o'qiy olishi kerak.
+BOT_UID=1000
+if [ "$(stat -c %u logs)" != "$BOT_UID" ] || [ "$(stat -c %u data)" != "$BOT_UID" ] \
+    || [ "$(stat -c %u credentials.json)" != "$BOT_UID" ]; then
+    if [ "$(id -u)" = "0" ]; then
+        chown -R "$BOT_UID:$BOT_UID" logs data credentials.json
+    else
+        sudo chown -R "$BOT_UID:$BOT_UID" logs data credentials.json
+    fi
+fi
 
 # 5. Qurish va ishga tushirish -------------------------------------------------
 info "Docker konteyner qurilmoqda va ishga tushirilmoqda..."

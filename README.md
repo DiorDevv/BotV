@@ -110,7 +110,8 @@ cd BotV
    to'xtaydi va sizdan `.env`ni to'ldirib qayta ishga tushirishni so'raydi
 3. `credentials.json` yo'q bo'lsa, bo'sh joy egallovchi fayl yaratadi (bot baribir ishga
    tushadi, faqat Google Sheets/Drive real kalit qo'yilmaguncha ishlamaydi)
-4. `logs/`, `tmp/`, `fallback_log.jsonl` uchun joy tayyorlaydi
+4. `logs/` va `data/` papkalarini tayyorlaydi (konteyner ichidagi `bot` foydalanuvchisi — UID
+   1000 — yoza olishi uchun egasini o'zgartiradi, kerak bo'lsa sudo so'raydi)
 5. `docker compose up -d --build` bilan konteynerni quradi va ishga tushiradi
 
 `.env` to'ldirilgach, `./setup.sh`ni qayta ishga tushirsangiz bo'ldi — bot ishlab ketadi.
@@ -125,7 +126,9 @@ cp .env.example .env
 # .env faylini to'ldiring
 # credentials.json faylini loyiha papkasiga qo'ying
 
-touch fallback_log.jsonl   # bind mount uchun fayl oldindan mavjud bo'lishi kerak
+mkdir -p logs data
+[ -f credentials.json ] || echo '{}' > credentials.json
+sudo chown -R 1000:1000 logs data credentials.json   # konteyner UID 1000 bilan ishlaydi
 
 docker compose up -d --build
 ```
@@ -139,7 +142,17 @@ docker compose down           # to'xtatish
 ```
 
 `docker-compose.yml`da `restart: always` o'rnatilgan — server qayta yuklansa ham bot avtomatik
-ishga tushadi.
+ishga tushadi. Konteyner vaqti `Asia/Tashkent`, Docker loglari 3 x 10MB bilan cheklangan.
+
+> **Muhim**: bitta bot tokeni bilan faqat **bitta** nusxa ishlashi mumkin. Serverda ishga
+> tushirishdan oldin boshqa joyda (masalan, kompyuteringizda) ishlayotgan botni to'xtating,
+> aks holda Telegram `Conflict: terminated by other getUpdates request` xatoligini beradi.
+
+### 6.3 — Zaxira nusxa
+
+Qimmatli ma'lumotlar faqat `.env`, `credentials.json` va `data/` papkasida (Google Sheets
+ulanmagan bo'lsa, barcha arizalar `data/fallback_log.jsonl` fayliga yoziladi). Serverni
+ko'chirishda shu uchtasini nusxalang.
 
 ## 7. Loyiha tuzilmasi
 
@@ -195,5 +208,6 @@ uchun `/start` har doim odatdagidek til tanlashdan boshlanadi.
 
 - Barcha xatoliklar va muhim hodisalar `logs/bot.log` fayliga yoziladi (rotatsiya bilan, 5MB x 5
   nusxa).
-- Agar Google Sheets vaqtincha ishlamay qolsa, nomzod ma'lumoti `fallback_log.jsonl` fayliga
-  JSON qator sifatida yoziladi — keyinchalik qo'lda Sheets'ga kiritish uchun.
+- Agar Google Sheets ulanmagan yoki vaqtincha ishlamay qolsa, nomzod ma'lumoti
+  `data/fallback_log.jsonl` fayliga (lokal ishga tushirilganda — `./fallback_log.jsonl`) JSON qator
+  sifatida yoziladi — keyinchalik qo'lda Sheets'ga kiritish uchun.

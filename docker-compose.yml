@@ -5,7 +5,15 @@ services:
     restart: always
     env_file:
       - .env
+    environment:
+      TZ: Asia/Tashkent
+      FALLBACK_LOG_PATH: /app/data/fallback_log.jsonl
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - ./logs:/app/logs
-      - ./fallback_log.jsonl:/app/fallback_log.jsonl
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

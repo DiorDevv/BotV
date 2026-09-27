@@ -5,6 +5,7 @@
 credentials.json
 fallback_log.jsonl
 logs/
+data/
 tmp/
 .venv/
 venv/

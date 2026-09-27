@@ -80,10 +80,11 @@ async def handle_cv_file(message: Message, state: FSMContext, bot: Bot) -> None:
     try:
         async with CV_PROCESSING_SEMAPHORE:
             cv_link = ""
-            try:
-                cv_link = await drive.upload_file(local_path, safe_name)
-            except Exception:
-                logger.exception("CV faylini Google Drive'ga yuklashda xatolik")
+            if config.drive_enabled:
+                try:
+                    cv_link = await drive.upload_file(local_path, safe_name)
+                except Exception:
+                    logger.exception("CV faylini Google Drive'ga yuklashda xatolik")
 
             row = build_row(data, "accepted", cv_link=cv_link, cv_file_id=file_id)
             await sheets.append_row_with_fallback(row)

@@ -44,7 +44,7 @@ FALLBACK_SOURCE_NOTE = (
 
 
 def _is_google_configured() -> bool:
-    return bool(config.GOOGLE_SHEET_ID)
+    return config.sheets_enabled
 
 
 async def _get_all_records() -> tuple[list[dict], bool]:
